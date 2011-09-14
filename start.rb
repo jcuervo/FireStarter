@@ -2,7 +2,6 @@ initializer 'generators.rb', <<-RUBY
 Rails.application.config.generators do |g|
 end
 RUBY
-#"mongoid",
 @recipes = ["jquery", "haml", "rspec", "cucumber", "guard",  "action_mailer", "devise", "cancan", "rails_admin", "add_user", "home_page", "home_page_users", "seed_database", "users_page", "css_setup", "application_layout", "html5", "navigation", "cleanup", "ban_spiders", "extras", "git"]
 
 def recipes; @recipes end

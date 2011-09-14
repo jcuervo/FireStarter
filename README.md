@@ -2,6 +2,14 @@ About
 ======
 A Rails 3.1 project kick starter. (Will consolidate all the inspiration behind this later)
 
+Credits
+=======
+This template is based on RailsApps' Rails 3 Application Templates https://github.com/RailsApps/rails3-application-templates
+
+Dependencies
+===========
+This template is specific to Rails 3.1 with Ruby 1.9.2.
+
 How to Use
 ===========
 Run directly from github:<br>
