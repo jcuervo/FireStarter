@@ -3,7 +3,7 @@ Rails.application.config.generators do |g|
 end
 RUBY
 #"mongoid",
-@recipes = ["jquery", "haml", "rspec", "cucumber", "guard",  "action_mailer", "devise", "cancan", "rails_admin", "add_user", "home_page", "home_page_users", "seed_database", "users_page", "css_setup", "application_layout", "html5", "navigation", "cleanup", "ban_spiders", "extras", "git"]
+@recipes = ["jquery", "haml", "rspec", "cucumber", "guard",  "action_mailer", "devise", "cancan", "add_user", "rails_admin", "home_page", "home_page_users", "seed_database", "users_page", "css_setup", "application_layout", "html5", "navigation", "cleanup", "ban_spiders", "extras", "capistrano", "mailer", "sitemap", "git"]
 
 def recipes; @recipes end
 def recipe?(name); @recipes.include?(name) end
@@ -1548,6 +1548,185 @@ else
 end
 
 
+# >----------------------------------[ Capistrano ]----------------------------------<
+
+@current_recipe = "capistrano"
+@before_configs["capistrano"].call if @before_configs["capistrano"]
+say_recipe 'Capistrano'
+
+config = {}
+@configs[@current_recipe] = config
+
+# Application template recipe for the rails_apps_composer. Check for a newer version here:
+# https://github.com/RailsApps/rails_apps_composer/blob/master/recipes/extras.rb
+
+say_wizard "Include capistrano script"
+gem 'capistrano'
+after_bundler do
+  run 'capify'
+  
+  remove_file 'config/deploy.rb'
+  create_file 'Capfile' do
+<<-'Capfile'
+load 'deploy' if respond_to?(:namespace) # cap2 differentiator
+Dir['vendor/plugins/*/recipes/*.rb'].each { |plugin| load(plugin) }
+
+load 'config/deploy' # remove this line to skip loading any of the default tasks
+Capfile
+  create_file 'config/deploy.rb' do 
+<<-'ERB'
+set :scm,           :mercurial # :git
+set :user,          ''
+set :password,      ''
+set :deploy_to,     ''
+set :application,   ''
+set :repository,    ''
+set :use_sudo,      false
+server "", :app, :web, :db, :primary => true
+
+after "deploy:symlink" do
+  run "cd #{current_path} && bundle"
+end
+
+namespace :deploy do
+  desc "Restarting mod_rails with restart.txt"
+  task :restart do
+    run "touch #{current_path}/tmp/restart.txt"
+  end
+  
+  desc "Run the migrate rake task."
+  task :migrate do
+    run "cd #{current_path} && rake RAILS_ENV=production  db:migrate"
+  end
+
+  desc "DB reset, and seed"
+  task :reset_db do
+    run "cd #{current_path} && rake db:migrate VERSION=0 && rake db:migrate && rake db:seed"
+  end
+end
+
+namespace :remote do
+  desc "tail production log files"
+  task :logs do
+    run "tail -f #{current_path}/log/production.log" do |channel, stream, data|
+      puts  # for an extra line break before the host name
+      puts "#{channel[:host]}: #{data}" 
+      break if stream == :err    
+    end
+  end
+  
+  desc "remote console"
+  task :console do
+    input = ''
+    run "cd #{current_path} && rails c #{ENV['RAILS_ENV']}" do |channel, stream, data|
+      next if data.chomp == input.chomp || data.chomp == ''
+      print data
+      channel.send_data(input = $stdin.gets) if data =~ /^(>|\?)>/
+    end
+  end
+end
+
+after 'deploy', 'deploy:migrate'
+after 'deploy', 'deploy:cleanup'
+ERB
+  end
+end
+
+recipes.delete('capistrano')
+
+
+# >--------------------------------[ Mailer ]---------------------------------<
+
+@current_recipe = "mailer"
+@before_configs["mailer"].call if @before_configs["mailer"]
+say_recipe 'Mailer'
+
+config = {}
+config['mailer'] = yes_wizard?("Would you like to include Mailer?") if true && true unless config.key?('mailer')
+@configs[@current_recipe] = config
+
+# Application template recipe for the rails_apps_composer. Check for a newer version here:
+# https://github.com/RailsApps/rails_apps_composer/blob/master/recipes/extras.rb
+
+if config['mailer']
+  after_bundler do
+    say_wizard "Adding Mailer options"
+    generate "mailer PostOffice"
+  end
+else
+  recipes.delete('mailer')
+end
+
+
+# >--------------------------------[ Sitemap Generator ]---------------------------------<
+
+@current_recipe = "sitemap"
+@before_configs["sitemap"].call if @before_configs["sitemap"]
+say_recipe 'Sitemap Generator'
+
+config = {}
+config['sitemap'] = yes_wizard?("Would you like to include Sitemap Generator?") if true && true unless config.key?('sitemap')
+@configs[@current_recipe] = config
+
+@configs[@current_recipe] = config
+
+if config['sitemap']
+  gem 'sitemap_generator'
+else
+  recipes.delete('sitemap')
+end
+say_wizard "Create Sitemap.rb"
+create_file 'config/sitemap.rb' do 
+<<-'Sitemap'
+# Set the host name for URL creation
+#SitemapGenerator::Sitemap.default_host = Configuration.find_by_name("site_url")
+#SitemapGenerator::Sitemap.yahoo_app_id = Configuration.find_by_name("yahoo_app_id")
+
+SitemapGenerator::Sitemap.create do
+  # Put links creation logic here.
+  #
+  # The root path '/' and sitemap index file are added automatically for you.
+  # Links are added to the Sitemap in the order they are specified.
+  #
+  # Usage: add(path, options={})
+  #        (default options are used if you don't specify)
+  #
+  # Defaults: :priority => 0.5, :changefreq => 'weekly',
+  #           :lastmod => Time.now, :host => default_host
+  #
+  # Examples:
+  #
+  # Add '/articles'
+  #
+  #   add articles_path, :priority => 0.7, :changefreq => 'daily'
+  #
+  # Add all articles:
+  #
+  #   Article.find_each do |article|
+  #     add article_path(article), :lastmod => article.updated_at
+  #   end
+end
+Sitemap
+end
+
+
+
+after_bundler do
+  say_wizard "Add Sitemap to Robots.txt"
+  append_file 'public/robots.txt' do
+<<-'RailsAdminConfig'
+Sitemap: http://www.example.com/sitemap_index.xml.gz
+RailsAdminConfig
+  end
+  
+  say_wizard "Generate Configuration Model"
+  generate(:model, "configuration name:string value:string")
+  end
+  
+end
+
+
+
 
 # >----------------------------------[ Git ]----------------------------------<
 
@@ -1570,7 +1749,8 @@ after_everything do
   get "https://raw.github.com/RailsApps/rails3-application-templates/master/files/gitignore.txt", ".gitignore"
 
   if recipes.include? 'omniauth'
-    append_file '.gitignore' do <<-TXT
+    append_file '.gitignore' do 
+<<-TXT
 
 # keep OmniAuth service provider secrets out of the Git repo
 config/initializers/omniauth.rb
