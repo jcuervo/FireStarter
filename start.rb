@@ -640,6 +640,8 @@ class Ability
   include CanCan::Ability
 
   def initialize(user)
+    can :manage, :all #uncomment this and set new roles and abilities later
+    
     # Define abilities for the passed in user here. For example:
     #
     #   user ||= User.new # guest user (not logged in)
