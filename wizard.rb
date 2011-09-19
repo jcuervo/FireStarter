@@ -19,7 +19,7 @@ Rails.application.config.generators do |g|
 end
 RUBY
 
-@recipes = ["activerecord", "cucumber", "devise", "env_yaml", "haml", "hoptoad", "jquery", "rails_admin", "sass"] 
+@recipes = ["activerecord", "cucumber", "env_yaml", "haml", "jquery", "rails_admin", "sass", "html5", "authorization", "sitemap_generator", "cleanup"] 
 
 def recipes; @recipes end
 def recipe?(name); @recipes.include?(name) end
@@ -111,32 +111,6 @@ after_bundler do
 end
 
 
-# >--------------------------------[ Devise ]---------------------------------<
-
-@current_recipe = "devise"
-@before_configs["devise"].call if @before_configs["devise"]
-say_recipe 'Devise'
-
-
-@configs[@current_recipe] = config
-
-gem 'devise'
-
-after_bundler do
-  generate 'devise:install'
-
-  if recipes.include? 'mongo_mapper'
-    gem 'mm-devise'
-    gsub_file 'config/initializers/devise.rb', 'devise/orm/', 'devise/orm/mongo_mapper_active_model'
-    generate 'mongo_mapper:devise User'
-  elsif recipes.include? 'mongoid'
-    gsub_file 'config/initializers/devise.rb', 'devise/orm/active_record', 'devise/orm/mongoid'
-  end      
-
-  generate 'devise user'
-end
-
-
 # >--------------------------------[ EnvYAML ]--------------------------------<
 
 @current_recipe = "env_yaml"
@@ -194,39 +168,14 @@ end
 
 @current_recipe = "haml"
 @before_configs["haml"].call if @before_configs["haml"]
-say_recipe 'HAML'
+say_recipe 'HAML with Formtastic'
 
 
 @configs[@current_recipe] = config
 
 gem 'haml', '>= 3.0.0'
 gem 'haml-rails'
-
-
-# >--------------------------------[ Hoptoad ]--------------------------------<
-
-@current_recipe = "hoptoad"
-@before_configs["hoptoad"].call if @before_configs["hoptoad"]
-say_recipe 'Hoptoad'
-
-config = {}
-config['use_heroku'] = yes_wizard?("Use the Hoptoad Heroku addon?") if true && recipe?('heroku') unless config.key?('use_heroku')
-config['api_key'] = ask_wizard("Enter Hoptoad API Key:") if !config['use_heroku'] && true unless config.key?('api_key')
-@configs[@current_recipe] = config
-
-gem 'hoptoad_notifier'
-
-if config['use_heroku']
-  after_everything do
-    say_wizard "Adding hoptoad:basic Heroku addon (you can always upgrade later)"
-    run "heroku addons:add hoptoad:basic"
-    generate "hoptoad --heroku"
-  end
-else
-  after_bundler do
-    generate "hoptoad --api-key #{config['api_key']}"
-  end
-end
+gem 'formtastic'
 
 
 # >--------------------------------[ jQuery ]---------------------------------<
@@ -251,18 +200,45 @@ end
 
 @current_recipe = "rails_admin"
 @before_configs["rails_admin"].call if @before_configs["rails_admin"]
-say_recipe 'RailsAdmin'
+say_recipe 'RailsAdmin with CkEditor'
 
-config = {}
-config['ckeditor'] = yes_wizard?("Install CKEditor?") if true && true unless config.key?('ckeditor')
-@configs[@current_recipe] = config
-
+gem 'devise'
 gem 'rails_admin', :git => 'git://github.com/sferik/rails_admin.git'
+gem "ckeditor"
+gem "paperclip"
 
 after_bundler do
-  generate 'rails_admin:install_admin'
-  rake 'admin:copy_assets'
-  rake 'admin:ckeditor_download' if config['ckeditor']
+  generate 'rails_admin:install'
+  generate 'ckeditor:install'
+  generate 'ckeditor:models --orm=active_record --backend=paperclip'
+  
+  #hide ckeditor models in RailsAdmin CMS
+  gsub_file 'config/initializers/rails_admin.rb', /config.current_user_method { current_user } #auto-generated/ do
+    "# use CanCan for authorization
+    config.authorize_with :cancan
+    config.current_user_method { current_user } #auto-generated
+    # hide Ckeditor Assets from RailsAdmin CMS
+    config.excluded_models = ['Ckeditor::Picture', 'Ckeditor::AttachmentFile', 'Ckeditor::Asset']
+    # default field formats
+    config.models do
+      list do
+        fields_of_type :datetime do
+          date_format :short
+        end
+      end
+      create do
+        fields_of_type :text do
+          ckeditor true
+        end
+      end
+      edit do
+        fields_of_type :text do
+          ckeditor true
+        end
+      end
+    end
+    "
+  end
 end
 
 
@@ -279,9 +255,155 @@ unless recipes.include? 'haml'
   gem 'haml', '>= 3.0.0'
 end
 
+# >---------------------------------[ html5 ]---------------------------------<
 
+@current_recipe = "html5"
+@before_configs["html5"].call if @before_configs["html5"]
+say_recipe 'HTML5 Boiler Plate'
 
+@configs[@current_recipe] = config
 
+# HTML5 Boiler Plate for Rails
+# Written by: Russ Frisch
+# http://github.com/russfrisch/h5bp-rails
+
+# Download HTML5 Boilerplate plugins.js (converted to CoffeeScript)
+get "https://github.com/russfrisch/h5bp-rails/raw/master/assets/plugins.js.coffee", "app/assets/javascripts/plugins.js.coffee"
+
+# Download and merge HTML5 Boilerplate stylesheet with application.css
+inside('app/assets/stylesheets/') do
+  FileUtils.rm_rf 'application.css'
+  FileUtils.touch 'application.css'
+end
+prepend_to_file 'app/assets/stylesheets/application.css' do
+  " /*
+ * This is a manifest file that'll automatically include all the stylesheets available in this directory
+ * and any sub-directories. You're free to add application-wide styles to this file and they'll appear at
+ * the top of the compiled file, but it's generally better to create a new file per style scope.
+ *= require application-pre
+ *= require_self
+ *= require application-post
+*/
+
+"
+end
+get "https://github.com/paulirish/html5-boilerplate/raw/master/css/style.css", "app/assets/stylesheets/application-pre.css"
+get "https://github.com/paulirish/html5-boilerplate/raw/master/css/style.css", "app/assets/stylesheets/application-post.css"
+gsub_file 'app/assets/stylesheets/application-pre.css', /\/\* ==\|== media queries.* /m, ''
+gsub_file 'app/assets/stylesheets/application-post.css', /\A.*?(==\|== primary styles).*?(\*\/){1}/m, ''
+gsub_file 'app/assets/stylesheets/application-pre.css', /==\|==/, '==|==.'
+gsub_file 'app/assets/stylesheets/application-post.css', /==\|==/, '==|==.'
+
+# Download HTML5 Boilerplate site root assets
+get "https://github.com/russfrisch/html5-boilerplate/raw/master/apple-touch-icon-114x114-precomposed.png", "public/apple-touch-icon-114x114-precomposed.png"
+get "https://github.com/russfrisch/html5-boilerplate/raw/master/apple-touch-icon-57x57-precomposed.png", "public/apple-touch-icon-57x57-precomposed.png"
+get "https://github.com/russfrisch/html5-boilerplate/raw/master/apple-touch-icon-72x72-precomposed.png", "public/apple-touch-icon-72x72-precomposed.png"
+get "https://github.com/russfrisch/html5-boilerplate/raw/master/apple-touch-icon-precomposed.png", "public/apple-touch-icon-precomposed.png"
+get "https://github.com/russfrisch/html5-boilerplate/raw/master/apple-touch-icon.png", "public/apple-touch-icon.png"
+get "https://github.com/russfrisch/html5-boilerplate/raw/master/crossdomain.xml", "public/crossdomain.xml"
+get "https://github.com/russfrisch/html5-boilerplate/raw/master/humans.txt", "public/humans.txt"
+get "https://github.com/russfrisch/html5-boilerplate/raw/master/.htaccess", "public/.htaccess"
+
+# Update application.html.erb with HTML5 Boilerplate index.html content
+inside('app/views/layouts') do
+  FileUtils.rm_rf 'application.html.erb'
+end
+get "https://github.com/russfrisch/html5-boilerplate/raw/master/index.html", "app/views/layouts/application.html.erb"
+gsub_file 'app/views/layouts/application.html.erb', /<link rel="stylesheet" href="css\/style.css">/ do
+  "<%= stylesheet_link_tag \"application\" %>"
+end
+gsub_file 'app/views/layouts/application.html.erb', /<script.*<\/head>/mi do
+   "<%= javascript_include_tag \"modernizr\" %>
+</head>"
+end
+gsub_file 'app/views/layouts/application.html.erb', /<meta charset="utf-8">/ do
+  "<meta charset=\"utf-8\">
+  <%= csrf_meta_tag %>"
+end
+gsub_file 'app/views/layouts/application.html.erb', /<div id="container">[\s\S]*<\/div>/, '<%= yield %>'
+gsub_file 'app/views/layouts/application.html.erb', /<!-- JavaScript[\s\S]*!-- end scripts-->/, '<%= javascript_include_tag "application" %>'
+
+# Add Modernizr-Rails dependency to get Modernizr.js support,
+# optional blueprint-rails, coffeebeans, and Heroku dependencies.
+gsub_file 'Gemfile', /gem 'jquery-rails'/ do
+  "# JavasScript libs
+gem 'jquery-rails'
+gem 'modernizr-rails'
+
+# Stylesheet libs
+# gem 'blueprint-rails'
+
+# Ajax request CoffeeScript support
+# gem 'coffeebeans'
+
+# Heroku deployment requirements
+# group :production do
+#   gem 'therubyracer-heroku'
+#   gem 'pg'
+# end
+"
+end
+
+# >-----------------------------[ Authorization ]-------------------------------<
+@current_recipe = "authorization"
+@before_configs["authorization"].call if @before_configs["authorization"]
+say_recipe 'Authorization with CanCan'
+
+@configs[@current_recipe] = config
+
+gem 'cancan'
+
+after_bundler do
+  generate 'cancan:ability'
+end
+
+# >-----------------------------[ Sitemap Generator ]-------------------------------<
+@current_recipe = "sitemap_generator"
+@before_configs["sitemap_generator"].call if @before_configs["sitemap_generator"]
+say_recipe 'Sitemap Generator'
+
+@configs[@current_recipe] = config
+
+gem 'sitemap_generator'
+
+after_bundler do
+  run "rake sitemap:install"
+  #load ability.rb to allow initial management
+  gsub_file 'app/models/ability.rb', /def initialize\(user\)/ do
+    "# let RailsAdmin allow initial user sign-up
+    def initialize(user)
+      can :manage, :all
+    "
+  end
+end
+
+# >-----------------------------[ Cleanup ]-------------------------------<
+@current_recipe = "cleanup"
+@before_configs["cleanup"].call if @before_configs["cleanup"]
+say_recipe 'Clean Up'
+
+after_bundler do
+  # delete public/index.html
+  remove_file 'public/index.html'
+  
+  # run the generated migrations
+  run 'bundle exec rake db:migrate'
+  
+  # convert primary layout to haml
+  run 'html2haml app/views/layouts/application.html.erb app/views/layouts/application.html.haml'
+  remove_file 'app/views/layouts/application.html.erb'
+  
+  # generate the Home controller
+  run 'bundle exec rails g controller Home index'
+  
+  # make home#index as root
+  gsub_file 'config/routes.rb', /devise_for :users/ do
+    "
+    devise_for :users
+    root :to => 'home#index'
+    "
+  end
+end
 
 @current_recipe = nil
 
