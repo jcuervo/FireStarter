@@ -3,7 +3,7 @@ Rails.application.config.generators do |g|
 end
 RUBY
 #"mongoid",
-@recipes = ["jquery", "haml", "rspec", "cucumber", "guard",  "action_mailer", "devise", "cancan", "add_user", "rails_admin", "home_page", "home_page_users", "seed_database", "users_page", "css_setup", "application_layout", "html5", "navigation", "cleanup", "ban_spiders", "extras", "capistrano", "mailer", "sitemap", "git"]
+@recipes = ["jquery", "haml", "rspec", "cucumber", "guard",  "action_mailer", "devise", "cancan", "add_user", "rails_admin", "home_page", "home_page_users", "users_page", "css_setup", "application_layout", "html5", "navigation", "cleanup", "ban_spiders", "mailer", "sitemap", "extras", "seed_database", "capistrano", "git"]
 
 def recipes; @recipes end
 def recipe?(name); @recipes.include?(name) end
@@ -906,50 +906,6 @@ ERB
 end
 
 
-# >-----------------------------[ SeedDatabase ]------------------------------<
-
-@current_recipe = "seed_database"
-@before_configs["seed_database"].call if @before_configs["seed_database"]
-say_recipe 'SeedDatabase'
-
-
-@configs[@current_recipe] = config
-
-# Application template recipe for the rails_apps_composer. Check for a newer version here:
-# https://github.com/RailsApps/rails_apps_composer/blob/master/recipes/seed_database.rb
-
-
-after_bundler do
-
-  say_wizard "SeedDatabase recipe running 'after bundler'"
-
-  unless recipes.include? 'mongoid'
-    run 'bundle exec rake db:migrate'
-  end
-
-  if recipes.include? 'mongoid'
-    append_file 'db/seeds.rb' do <<-FILE
-puts 'EMPTY THE MONGODB DATABASE'
-Mongoid.master.collections.reject { |c| c.name =~ /^system/}.each(&:drop)
-FILE
-    end
-  end
-
-  if recipes.include? 'devise'
-    # create a default user
-    append_file 'db/seeds.rb' do <<-FILE
-puts 'SETTING UP DEFAULT USER LOGIN'
-user = User.create! :name => 'First User', :email => 'user@test.com', :password => 'please', :password_confirmation => 'please'
-puts 'New user created: ' << user.name
-FILE
-    end
-  end
-
-  run 'bundle exec rake db:seed'
-
-end
-
-
 # >-------------------------------[ UsersPage ]-------------------------------<
 
 @current_recipe = "users_page"
@@ -1528,6 +1484,96 @@ else
   recipes.delete('ban_spiders')
 end
 
+# >--------------------------------[ Mailer ]---------------------------------<
+
+@current_recipe = "mailer"
+@before_configs["mailer"].call if @before_configs["mailer"]
+say_recipe 'Mailer'
+
+config = {}
+config['mailer'] = yes_wizard?("Would you like to include Mailer?") if true && true unless config.key?('mailer')
+@configs[@current_recipe] = config
+
+# Application template recipe for the rails_apps_composer. Check for a newer version here:
+# https://github.com/RailsApps/rails_apps_composer/blob/master/recipes/extras.rb
+
+if config['mailer']
+  after_bundler do
+    say_wizard "Adding Mailer options"
+    generate "mailer PostOffice"
+  end
+else
+  recipes.delete('mailer')
+end
+
+
+# >--------------------------------[ Sitemap Generator ]---------------------------------<
+
+@current_recipe = "sitemap"
+@before_configs["sitemap"].call if @before_configs["sitemap"]
+say_recipe 'Sitemap Generator'
+
+config = {}
+config['sitemap'] = yes_wizard?("Would you like to include Sitemap Generator?") if true && true unless config.key?('sitemap')
+@configs[@current_recipe] = config
+
+if config['sitemap']
+  gem 'sitemap_generator'
+else
+  recipes.delete('sitemap')
+end
+
+after_bundler do
+  say_wizard "Add Sitemap to Robots.txt"
+  append_file 'public/robots.txt' do
+<<-'RailsAdminConfig'
+Sitemap: http://www.example.com/sitemap_index.xml.gz
+RailsAdminConfig
+  end
+  
+  say_wizard "Generate Configuration Model"
+  generate(:model, "configuration name:string description:string")
+  remove_file 'app/models/configuration.rb'
+  create_file 'app/models/configuration.rb' do
+<<-'RailsAdminConfig'
+class Configuration < ActiveRecord::Base
+  after_save :restart
+  
+  def restart
+    f = File.new("#{Rails.root}/config/sitemap.rb", "w+") 
+    f.truncate(0)
+    f.write("SitemapGenerator::Sitemap.default_host = Configuration.find_by_name('host').description if Configuration.find_by_name('host')\r\n")
+    f.write("SitemapGenerator::Sitemap.yahoo_app_id = Configuration.find_by_name('yahoo_app_id').description if Configuration.find_by_name('yahoo_app_id')\r\n")
+    f.write("SitemapGenerator::Sitemap.create do\r\n")
+    Configuration.where("name = 'for_sitemap'").each do |c|
+      f.write("  add #{c.description.downcase}s_path\r\n")
+      f.write("  #{c.description.classify}.find_each do |obj|\r\n")
+      f.write("    add #{c.description.downcase}_path(obj), :lastmod => obj.updated_at\r\n")
+      f.write("  end\r\n")
+    end
+    f.write("end\r\n")
+    f.close
+    
+    if Configuration.find_by_name('restart').description.downcase == "yes"
+      system("touch #{Rails.root}/tmp/restart.txt")
+      config = Configuration.find_by_name('restart')
+      config.description = "no"
+      config.save 
+    end if Configuration.find_by_name('restart')
+    
+    if Configuration.find_by_name('deploy_sitemap').description.downcase == "yes"
+      system("rake sitemap:refresh RAILS_ENV=#{Rails.env}")
+      config = Configuration.find_by_name('deploy_sitemap')
+      config.description = "no"
+      config.save
+    end if Configuration.find_by_name('deploy_sitemap')
+  end
+end
+RailsAdminConfig
+  end
+end
+
+
 
 # >--------------------------------[ Extras ]---------------------------------<
 
@@ -1565,7 +1611,7 @@ config = {}
 say_wizard "Include capistrano script"
 gem 'capistrano'
 after_bundler do
-  run 'capify'
+  #run 'capify'
   
   remove_file 'config/deploy.rb'
   create_file 'Capfile' do
@@ -1575,6 +1621,8 @@ Dir['vendor/plugins/*/recipes/*.rb'].each { |plugin| load(plugin) }
 
 load 'config/deploy' # remove this line to skip loading any of the default tasks
 Capfile
+  end
+  
   create_file 'config/deploy.rb' do 
 <<-'ERB'
 set :scm,           :mercurial # :git
@@ -1637,94 +1685,58 @@ end
 recipes.delete('capistrano')
 
 
-# >--------------------------------[ Mailer ]---------------------------------<
+# >-----------------------------[ SeedDatabase ]------------------------------<
 
-@current_recipe = "mailer"
-@before_configs["mailer"].call if @before_configs["mailer"]
-say_recipe 'Mailer'
+@current_recipe = "seed_database"
+@before_configs["seed_database"].call if @before_configs["seed_database"]
+say_recipe 'SeedDatabase'
 
-config = {}
-config['mailer'] = yes_wizard?("Would you like to include Mailer?") if true && true unless config.key?('mailer')
+
 @configs[@current_recipe] = config
 
 # Application template recipe for the rails_apps_composer. Check for a newer version here:
-# https://github.com/RailsApps/rails_apps_composer/blob/master/recipes/extras.rb
-
-if config['mailer']
-  after_bundler do
-    say_wizard "Adding Mailer options"
-    generate "mailer PostOffice"
-  end
-else
-  recipes.delete('mailer')
-end
-
-
-# >--------------------------------[ Sitemap Generator ]---------------------------------<
-
-@current_recipe = "sitemap"
-@before_configs["sitemap"].call if @before_configs["sitemap"]
-say_recipe 'Sitemap Generator'
-
-config = {}
-config['sitemap'] = yes_wizard?("Would you like to include Sitemap Generator?") if true && true unless config.key?('sitemap')
-@configs[@current_recipe] = config
-
-@configs[@current_recipe] = config
-
-if config['sitemap']
-  gem 'sitemap_generator'
-else
-  recipes.delete('sitemap')
-end
-say_wizard "Create Sitemap.rb"
-create_file 'config/sitemap.rb' do 
-<<-'Sitemap'
-# Set the host name for URL creation
-#SitemapGenerator::Sitemap.default_host = Configuration.find_by_name("site_url")
-#SitemapGenerator::Sitemap.yahoo_app_id = Configuration.find_by_name("yahoo_app_id")
-
-SitemapGenerator::Sitemap.create do
-  # Put links creation logic here.
-  #
-  # The root path '/' and sitemap index file are added automatically for you.
-  # Links are added to the Sitemap in the order they are specified.
-  #
-  # Usage: add(path, options={})
-  #        (default options are used if you don't specify)
-  #
-  # Defaults: :priority => 0.5, :changefreq => 'weekly',
-  #           :lastmod => Time.now, :host => default_host
-  #
-  # Examples:
-  #
-  # Add '/articles'
-  #
-  #   add articles_path, :priority => 0.7, :changefreq => 'daily'
-  #
-  # Add all articles:
-  #
-  #   Article.find_each do |article|
-  #     add article_path(article), :lastmod => article.updated_at
-  #   end
-end
-Sitemap
-end
-
+# https://github.com/RailsApps/rails_apps_composer/blob/master/recipes/seed_database.rb
 
 
 after_bundler do
-  say_wizard "Add Sitemap to Robots.txt"
-  append_file 'public/robots.txt' do
-<<-'RailsAdminConfig'
-Sitemap: http://www.example.com/sitemap_index.xml.gz
-RailsAdminConfig
+
+  say_wizard "SeedDatabase recipe running 'after bundler'"
+
+  unless recipes.include? 'mongoid'
+    run 'bundle exec rake db:migrate'
+  end
+
+  if recipes.include? 'mongoid'
+    append_file 'db/seeds.rb' do <<-FILE
+puts 'EMPTY THE MONGODB DATABASE'
+Mongoid.master.collections.reject { |c| c.name =~ /^system/}.each(&:drop)
+FILE
+    end
+  end
+
+  if recipes.include? 'devise'
+    # create a default user
+    append_file 'db/seeds.rb' do <<-FILE
+puts 'SETTING UP DEFAULT USER LOGIN'
+user = User.create! :name => 'First User', :email => 'user@test.com', :password => 'please', :password_confirmation => 'please'
+puts 'New user created: ' << user.name
+FILE
+    end
   end
   
-  say_wizard "Generate Configuration Model"
-  generate(:model, "configuration name:string value:string")
+  append_file 'db/seeds.rb' do 
+    say_wizard 'Add Default Config settings'
+<<-'FILE'
+Configuration.create! :name => 'restart', :description => 'no'
+Configuration.create! :name => 'for_sitemap', :description => 'no'
+Configuration.create! :name => 'host', :description => 'http://www.example.com'
+Configuration.create! :name => 'deploy_sitemap', :description => 'no'
+Configuration.create! :name => 'yahoo_app_id'
+FILE
   end
-  
+
+  run 'bundle exec rake db:seed'
+
 end
 
 
