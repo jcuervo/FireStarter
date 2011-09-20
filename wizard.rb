@@ -206,6 +206,7 @@ gem 'devise'
 gem 'rails_admin', :git => 'git://github.com/sferik/rails_admin.git'
 gem "ckeditor"
 gem "paperclip"
+gem 'kaminari'
 
 after_bundler do
   generate 'rails_admin:install'
