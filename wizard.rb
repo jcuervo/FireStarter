@@ -18,8 +18,8 @@ initializer 'generators.rb', <<-RUBY
 Rails.application.config.generators do |g|
 end
 RUBY
-
-@recipes = ["activerecord", "cucumber", "env_yaml", "haml", "jquery", "rails_admin", "sass", "html5", "authorization", "sitemap_generator", "cleanup"] 
+#"jquery",
+@recipes = ["activerecord", "cucumber", "env_yaml", "haml", "mailer", "rails_admin", "sass", "html5", "authorization", "sitemap_generator", "cleanup"] 
 
 def recipes; @recipes end
 def recipe?(name); @recipes.include?(name) end
@@ -179,7 +179,7 @@ gem 'formtastic'
 
 
 # >--------------------------------[ jQuery ]---------------------------------<
-
+=begin
 @current_recipe = "jquery"
 @before_configs["jquery"].call if @before_configs["jquery"]
 say_recipe 'jQuery'
@@ -194,7 +194,7 @@ after_bundler do
   ui = config['ui'] ? ' --ui' : ''
   generate "jquery:install#{ui}"
 end
-
+=end
 
 # >------------------------------[ RailsAdmin ]-------------------------------<
 
@@ -356,6 +356,32 @@ gem 'cancan'
 
 after_bundler do
   generate 'cancan:ability'
+  #load ability.rb to allow initial management
+  gsub_file 'app/models/ability.rb', /def initialize\(user\)/ do
+    "# let RailsAdmin allow initial user sign-up
+    def initialize(user)
+      can :manage, :all
+    "
+  end
+end
+
+# >--------------------------------[ Mailer ]---------------------------------<
+
+@current_recipe = "mailer"
+@before_configs["mailer"].call if @before_configs["mailer"]
+say_recipe 'Mailer'
+
+config = {}
+config['mailer'] = yes_wizard?("Would you like to include Mailer?") if true && true unless config.key?('mailer')
+@configs[@current_recipe] = config
+
+if config['mailer']
+  after_bundler do
+    say_wizard "Adding Mailer options"
+    generate "mailer PostOffice"
+  end
+else
+  recipes.delete('mailer')
 end
 
 # >-----------------------------[ Sitemap Generator ]-------------------------------<
@@ -369,13 +395,7 @@ gem 'sitemap_generator'
 
 after_bundler do
   run "rake sitemap:install"
-  #load ability.rb to allow initial management
-  gsub_file 'app/models/ability.rb', /def initialize\(user\)/ do
-    "# let RailsAdmin allow initial user sign-up
-    def initialize(user)
-      can :manage, :all
-    "
-  end
+  
 end
 
 # >-----------------------------[ Cleanup ]-------------------------------<
@@ -404,9 +424,87 @@ after_bundler do
     root :to => 'home#index'
     "
   end
+  
+  say_wizard "ActionMailer recipe running 'after bundler'"
+  # modifying environment configuration files for ActionMailer
+  gsub_file 'config/environments/development.rb', /# Don't care if the mailer can't send/, '# ActionMailer Config'
+  gsub_file 'config/environments/development.rb', /config.action_mailer.raise_delivery_errors = false/ do
+<<-RUBY
+config.action_mailer.default_url_options = { :host => 'localhost:3000' }
+  # A dummy setup for development - no deliveries, but logged
+  config.action_mailer.delivery_method = :smtp
+  config.action_mailer.perform_deliveries = false
+  config.action_mailer.raise_delivery_errors = true
+  config.action_mailer.default :charset => "utf-8"
+RUBY
+  end
+  gsub_file 'config/environments/production.rb', /config.active_support.deprecation = :notify/ do
+<<-RUBY
+config.active_support.deprecation = :notify
+
+  config.action_mailer.default_url_options = { :host => 'yourhost.com' }
+  # ActionMailer Config
+  # Setup for production - deliveries, no errors raised
+  config.action_mailer.delivery_method = :smtp
+  config.action_mailer.perform_deliveries = true
+  config.action_mailer.raise_delivery_errors = false
+  config.action_mailer.default :charset => "utf-8"
+RUBY
+  end
+  
+  say_wizard "Add Sitemap to Robots.txt"
+  append_file 'public/robots.txt' do
+<<-'RailsAdminConfig'
+Sitemap: http://www.example.com/sitemap_index.xml.gz
+RailsAdminConfig
+  end
+  
+  say_wizard "Generate Configuration Model"
+  generate(:model, "configuration name:string description:string")
+  remove_file 'app/models/configuration.rb'
+  create_file 'app/models/configuration.rb' do
+<<-'RailsAdminConfig'
+class Configuration < ActiveRecord::Base
+  after_save :restart
+  
+  def restart
+    f = File.new("#{Rails.root}/config/sitemap.rb", "w+") 
+    f.truncate(0)
+    f.write("SitemapGenerator::Sitemap.default_host = Configuration.find_by_name('host').description if Configuration.find_by_name('host')\r\n")
+    f.write("SitemapGenerator::Sitemap.yahoo_app_id = Configuration.find_by_name('yahoo_app_id').description if Configuration.find_by_name('yahoo_app_id')\r\n")
+    f.write("SitemapGenerator::Sitemap.create do\r\n")
+    Configuration.where("name = 'for_sitemap'").each do |c|
+      f.write("  add #{c.description.downcase}s_path\r\n")
+      f.write("  #{c.description.classify}.find_each do |obj|\r\n")
+      f.write("    add #{c.description.downcase}_path(obj), :lastmod => obj.updated_at\r\n")
+      f.write("  end\r\n")
+    end
+    f.write("end\r\n")
+    f.close
+    
+    if Configuration.find_by_name('restart').description.downcase == "yes"
+      system("touch #{Rails.root}/tmp/restart.txt")
+      config = Configuration.find_by_name('restart')
+      config.description = "no"
+      config.save 
+    end if Configuration.find_by_name('restart')
+    
+    if Configuration.find_by_name('deploy_sitemap').description.downcase == "yes"
+      system("rake sitemap:refresh RAILS_ENV=#{Rails.env}")
+      config = Configuration.find_by_name('deploy_sitemap')
+      config.description = "no"
+      config.save
+    end if Configuration.find_by_name('deploy_sitemap')
+  end
+end
+RailsAdminConfig
+  end
 end
 
 @current_recipe = nil
+
+
+
 
 # >-----------------------------[ Run Bundler ]-------------------------------<
 
