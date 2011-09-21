@@ -423,18 +423,27 @@ say_recipe 'Clean Up'
 
 after_bundler do
   # delete public/index.html
+  say_wizard "Removing public/index.html"
   remove_file 'public/index.html'
   
+  say_wizard "Reset application.js"
+  remove_file 'app/assets/javascripts/application.js'
+  get 'https://raw.github.com/jcuervo/FireStarter/master/assets/application.js', 'app/assets/javascripts/application.js'
+  
   # run the generated migrations
+  say_wizard "Running the accumulated migrations..."
   run 'bundle exec rake db:migrate'
   
   # run the seeds
+  say_wizard "Loading initial seeds..."
   run 'bundle exec rake db:seed'
   
   # generate the Home controller
+  say_wizard "Creating the Home controller for the home page"
   run 'bundle exec rails g controller Home index'
   
   # make home#index as root
+  say_wizard "Fixing routes..."
   gsub_file 'config/routes.rb', /devise_for :admin_users, ActiveAdmin::Devise.config/ do
   "
   devise_for :admin_users, ActiveAdmin::Devise.config
@@ -443,31 +452,36 @@ after_bundler do
   end
   
   # ckeditor fix set
-  inject_into_file 'config/application.rb', :before => "\nend" do
-<<-RUBY
-  \n
-  config.autoload_paths += %W(#{config.root}/app/models/ckeditor)
-RUBY
+  say_wizard "Auto loading ckeditor assets..."
+  gsub_file 'config/application.rb', /class Application < Rails::Application/ do
+  "
+  class Application < Rails::Application
+    config.autoload_paths += %W(\#{config.root}/app/models/ckeditor)
+  "
   end
 
+  say_wizard "Moving ckeditor folder from public to assets..."
   # move ckeditor folder from public/javascript to app/assets/javascripts
-  FileUtils.mv 'public/javascripts/ckeditor', 'apps/assets/javascripts'
+  FileUtils.cp_r 'public/javascripts/ckeditor/', 'app/assets/javascripts/'
+  FileUtils.remove_dir 'public/javascripts', :force => true
   
+  say_wizard "Loading custom.css to hack ckeditor styles for active_admin"
   # copy assets/ckeditor/custom.css to app/assets/ckeditor/custom.css folder
-  # FileUtils.mkdir 'app/assets/stylesheets/ckeditor'
   get 'https://raw.github.com/jcuervo/FireStarter/master/assets/ckeditor/custom.css', 'app/assets/stylesheets/ckeditor/custom.css'
   
+  say_wizard "Loading css and js configurations to active_admin..."
   # update active_admin.rb, add the following lines:
-  inject_into_file 'config/initializers/active_admin.rb', :before => "\nend" do
-<<-RUBY
-  \n
+  gsub_file 'config/initializers/active_admin.rb', /config.current_user_method = :current_admin_user/ do
+  "
   config.register_javascript 'ckeditor/ckeditor.js'
   config.register_javascript 'ckeditor/config.js'
   config.register_stylesheet 'ckeditor/custom.css'
-RUBY
+  "
   end
   
   # update app/admin/pages.rb
+  say_wizard "Removing auto-generated pages.rb and replace with template..."
+  remove_file 'app/admin/pages.rb'
   get 'https://raw.github.com/jcuervo/FireStarter/master/assets/ckeditor/pages.rb', 'app/admin/pages.rb'
 end
 
