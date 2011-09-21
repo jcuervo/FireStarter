@@ -12,7 +12,7 @@ ActiveAdmin.register Page do
     # end
   end
   
-  show do
+  show :title => :title do
     h3 page.title
     div do
       simple_format page.content
