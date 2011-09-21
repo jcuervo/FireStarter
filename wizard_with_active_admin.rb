@@ -441,6 +441,23 @@ after_bundler do
   root :to => 'home#index'
   "
   end
+  
+  # ckeditor fix set
+  inject_into_file 'config/application.rb', :before => "\nend" do
+<<-RUBY
+  \n
+  config.autoload_paths += %W(#{config.root}/app/models/ckeditor)
+RUBY
+  end
+
+  # move ckeditor folder from public/javascript to app/assets/javascripts
+  FileUtils.mv 'public/javascripts/ckeditor', 'apps/assets/javascripts'
+  # copy assets/ckeditor/custom.css to app/assets/ckeditor/custom.css folder
+  # update active_admin.rb, add the following lines:
+    #config.register_javascript 'ckeditor/ckeditor.js'
+    #config.register_javascript 'ckeditor/config.js'
+    #config.register_stylesheet 'ckeditor/custom.css'
+  # update app/admin/pages.rb
 end
 
 @current_recipe = nil

@@ -1,0 +1,12 @@
+span.cke_skin_kama {
+  border:none !important;
+  border-radius: 0 !important;
+  padding:0 !important
+}
+.cke_wrapper {
+  background-color:transparent !important;
+  background-image:none !important;
+  background-repeat:none !important;
+  padding:0 !important;
+  border-radius:0 !important
+}
