@@ -452,12 +452,23 @@ RUBY
 
   # move ckeditor folder from public/javascript to app/assets/javascripts
   FileUtils.mv 'public/javascripts/ckeditor', 'apps/assets/javascripts'
+  
   # copy assets/ckeditor/custom.css to app/assets/ckeditor/custom.css folder
+  # FileUtils.mkdir 'app/assets/stylesheets/ckeditor'
+  get 'https://raw.github.com/jcuervo/FireStarter/master/assets/ckeditor/custom.css', 'app/assets/stylesheets/ckeditor/custom.css'
+  
   # update active_admin.rb, add the following lines:
-    #config.register_javascript 'ckeditor/ckeditor.js'
-    #config.register_javascript 'ckeditor/config.js'
-    #config.register_stylesheet 'ckeditor/custom.css'
+  inject_into_file 'config/initializers/active_admin.rb', :before => "\nend" do
+<<-RUBY
+  \n
+  config.register_javascript 'ckeditor/ckeditor.js'
+  config.register_javascript 'ckeditor/config.js'
+  config.register_stylesheet 'ckeditor/custom.css'
+RUBY
+  end
+  
   # update app/admin/pages.rb
+  get 'https://raw.github.com/jcuervo/FireStarter/master/assets/ckeditor/pages.rb', 'app/admin/pages.rb'
 end
 
 @current_recipe = nil
