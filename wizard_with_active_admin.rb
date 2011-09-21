@@ -190,6 +190,7 @@ gem 'activeadmin'
 gem "ckeditor"
 gem "paperclip"
 gem 'kaminari'
+gem "meta_search", "~> 1.1.1"
 
 after_bundler do
   generate 'active_admin:install'
