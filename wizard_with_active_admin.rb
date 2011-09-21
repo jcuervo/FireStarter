@@ -19,7 +19,7 @@ Rails.application.config.generators do |g|
 end
 RUBY
 
-@recipes = ["activerecord", "cucumber", "env_yaml", "haml", "active_admin", "sass", "html5", "authorization", "sitemap_generator", "cleanup"] 
+@recipes = ["activerecord", "cucumber", "env_yaml", "haml", "active_admin", "sass", "html5", "authorization", "sitemap_generator", "public_pages", "cleanup"] 
 
 def recipes; @recipes end
 def recipe?(name); @recipes.include?(name) end
@@ -236,6 +236,7 @@ after_bundler do
   inside('app/assets/stylesheets/') do
     FileUtils.rm_rf 'application.css'
     FileUtils.touch 'application.css'
+    FileUtils.touch 'styles.css.scss'
   end
   
   # Use Skeleton CSS
@@ -345,9 +346,73 @@ after_bundler do
   #load ability.rb to allow initial management
   gsub_file 'app/models/ability.rb', /def initialize\(user\)/ do
     "# let ActiveAdmin allow initial user sign-up
-    def initialize(user)
+    def initialize(admin_user)
       can :manage, :all
     "
+  end
+end
+
+# >-----------------------------[ Public Pages ]-------------------------------<
+@current_recipe = "public_pages"
+@before_configs["public_pages"].call if @before_configs["public_pages"]
+say_recipe 'Public Pages'
+
+config = {}
+config['public_pages'] = yes_wizard?("Do you want us to add public pages for you?") if true && true unless config.key?('public_pages')
+@configs[@current_recipe] = config
+
+if config['public_pages']
+  config = {}
+  config['home'] = yes_wizard?("Add a Home page?") if true && true unless config.key?('home')
+  config['about_us'] = yes_wizard?("Add an About Us page?") if true && true unless config.key?('about_us')
+  config['privacy_policy'] = yes_wizard?("Add a Privacy Policy page?") if true && true unless config.key?('privacy_policy')
+  config['terms_and_conditions'] = yes_wizard?("Add a Terms and Conditions page?") if true && true unless config.key?('terms_and_conditions')
+  config['contact_us'] = yes_wizard?("Add Contact Us page?") if true && true unless config.key?('contact_us')
+  @configs[@current_recipe] = config
+  
+  after_bundler do
+    # create the Page model, migration will be in bulk on CleanUp
+    run 'bundle exec rails g model Page title:string content:text browser_title:string meta_keywords:string meta_description:string'
+    
+    build_page = ""
+    config.each_pair { |key, value| 
+      build_page += "#{key} " if value.eql?(true) && !key.eql?("home") #skip home
+    }
+    
+    # create the Page controller
+    generate(:controller, "Page #{build_page}")
+    
+    # the generate controller above will create routes already, fix them
+    config.each_pair { |key, value| 
+      if value.eql?(true)
+        if key.eql?("home") #skip home, remove it from the routes
+          gsub_file 'config/routes.rb', /get \"page\/#{key}\"/ do
+            ""
+          end
+        else
+          gsub_file 'config/routes.rb', /get \"page\/#{key}\"/ do
+            "match '#{key}' => 'page##{key}'"
+          end
+        end
+      end
+    }
+    
+    build_page = ""
+    config.each_pair { |key, value| 
+      if value.eql?(true) && !key.eql?("home") #skip home
+        build_page += "{title: '#{key.gsub('_', ' ').titlecase}', content: 'initial content'}, "
+      end
+    }
+    build_page = build_page[0..(build_page.length - 3)] if build_page.length > 0
+    
+    # populate the seed
+    gsub_file 'db/seeds.rb', /# Examples:/ do
+    "Page.create([#{build_page}])
+    "
+    end
+
+    # add activeadmin model
+    run "bundle exec rails g active_admin:resource Page"
   end
 end
 
@@ -363,15 +428,18 @@ after_bundler do
   # run the generated migrations
   run 'bundle exec rake db:migrate'
   
+  # run the seeds
+  run 'bundle exec rake db:seed'
+  
   # generate the Home controller
   run 'bundle exec rails g controller Home index'
   
   # make home#index as root
   gsub_file 'config/routes.rb', /devise_for :admin_users, ActiveAdmin::Devise.config/ do
-"
-devise_for :admin_users, ActiveAdmin::Devise.config
-root :to => 'home#index'
-"
+  "
+  devise_for :admin_users, ActiveAdmin::Devise.config
+  root :to => 'home#index'
+  "
   end
 end
 
