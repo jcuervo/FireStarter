@@ -406,6 +406,7 @@ config['shopping_cart'] = yes_wizard?("Would you like to add Cart Management?") 
       say_wizard "Adding Product options"
       generate(:model, "product name:string description:string price:string #{(config['brand'])? "brand_id:string" : "" }")
     end
+    
     if config['brand']
       say_wizard "Adding Brand options"
       generate "model brand name:string description:string"
@@ -419,31 +420,65 @@ config['shopping_cart'] = yes_wizard?("Would you like to add Cart Management?") 
   has_many :products"
       end
     end
-    
-    if config['category']
-      say_wizard "Adding Product Category options"
-      generate "model category name:string description:string"
-      generate "model category_product id:integer product_id:integer category_id:integer"
-      gsub_file 'app/models/category.rb', 'ActiveRecord::Base' do
-        "ActiveRecord::Base
-  has_and_belongs_to_many :products, :join_table => :category_products"
-      end
+       
+    if config['shopping_cart']
+      say_wizard "Adding Cart Management options"
+      generate "model cart"
+      generate "model line_item product_id:integer cart_id:integer quantity:integer price:float"
+      
       gsub_file 'app/models/product.rb', 'ActiveRecord::Base' do
         "ActiveRecord::Base
-  has_and_belongs_to_many :categories, :join_table => :category_products"
+        has_many :line_items
+        default_scope :order => \"Name\"
+        before_destroy :ensure_not_referenced_by_any_line_item
+        def to_param
+          
+        end
+
+        def ensure_not_referenced_by_any_line_item
+          if line_items.empty?
+            return true
+          else
+            errors.add(:base, \"Line Items present\")
+            return false
+          end
+        end"
       end
-      gsub_file 'app/models/category_product.rb', 'ActiveRecord::Base' do 
+      
+      gsub_file 'app/models/cart.rb', 'ActiveRecord::Base' do
         "ActiveRecord::Base
-  belongs_to :category
-  belongs_to :product"
+  has_many :line_items, :dependent => :destroy
+  
+  def add_product(product_id, price, quantity)
+    current_item = line_items.find_by_product_id(product_id)
+    if current_item
+      current_item.quantity += 1
+    else
+      current_item = line_items.build(:product_id => product_id, :price => price, :quantity => quantity)
+    end
+    current_item
+  end
+
+  def total_items
+    (self.line_items.size > 0) ? self.line_items.all.inject(0) {|sum, item| sum + item.quantity} : 0
+  end
+
+  def total_price
+    (self.line_items.size > 0) ? self.line_items.all.inject(0) {|sum, item| sum + (item.price * item.quantity)} : 0
+  end"
+      end
+      
+      gsub_file 'app/models/line_item.rb', 'ActiveRecord::Base' do
+        "ActiveRecord::Base
+  belongs_to :product
+  belongs_to :cart
+  
+  def sub_total
+    self.quantity * self.price
+  end"
       end
     end
-    
-    if config['shopping_cart']
-      # say_wizard "Adding Cart Management options"
-      # generate(:model, "product name:string description:string price:string #{(config['brand'])? "brand_id:string" : "" }")
-    end
-  
+  end
 #else
 recipes.delete('products')
 
