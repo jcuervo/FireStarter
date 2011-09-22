@@ -19,7 +19,7 @@ Rails.application.config.generators do |g|
 end
 RUBY
 
-@recipes = ["activerecord", "cucumber", "env_yaml", "haml", "jquery", "rails_admin", "sass", "html5", "authorization", "sitemap_generator", "cleanup"] 
+@recipes = ["activerecord", "cucumber", "env_yaml", "haml", "mailer", "rails_admin", "sass", "html5", "authorization", "sitemap_generator", "products" "cleanup"] 
 
 def recipes; @recipes end
 def recipe?(name); @recipes.include?(name) end
@@ -87,6 +87,7 @@ if config['database']
   gsub_file 'Gemfile', "gem '#{old_gem}'", "gem '#{gem_for_database}'"
   template "config/databases/#{@options[:database]}.yml", "config/database.yml.new"
   run 'mv config/database.yml.new config/database.yml'
+
 end
 
 after_bundler do
@@ -100,16 +101,17 @@ end
 @before_configs["cucumber"].call if @before_configs["cucumber"]
 say_recipe 'Cucumber'
 
-
+config['cucumber'] = yes_wizard?("Use Cucumber Test framework?") if true && true unless config.key?('cucumber')
 @configs[@current_recipe] = config
 
-gem 'cucumber-rails', :group => [:development, :test]
-gem 'capybara', :group => [:development, :test]
+if config['cucumber']
+  gem 'cucumber-rails', :group => [:development, :test]
+  gem 'capybara', :group => [:development, :test]
 
-after_bundler do
-  generate "cucumber:install --capybara#{' --rspec' if recipes.include?('rspec')}#{' -D' unless recipes.include?('activerecord')}"
+  after_bundler do
+    generate "cucumber:install --capybara#{' --rspec' if recipes.include?('rspec')}#{' -D' unless recipes.include?('activerecord')}"
+  end
 end
-
 
 # >--------------------------------[ EnvYAML ]--------------------------------<
 
@@ -176,25 +178,6 @@ say_recipe 'HAML with Formtastic'
 gem 'haml', '>= 3.0.0'
 gem 'haml-rails'
 gem 'formtastic'
-
-
-# >--------------------------------[ jQuery ]---------------------------------<
-
-@current_recipe = "jquery"
-@before_configs["jquery"].call if @before_configs["jquery"]
-say_recipe 'jQuery'
-
-config = {}
-config['ui'] = yes_wizard?("Install jQuery UI?") if true && true unless config.key?('ui')
-@configs[@current_recipe] = config
-
-gem 'jquery-rails'
-
-after_bundler do
-  ui = config['ui'] ? ' --ui' : ''
-  generate "jquery:install#{ui}"
-end
-
 
 # >------------------------------[ RailsAdmin ]-------------------------------<
 
@@ -356,6 +339,177 @@ gem 'cancan'
 
 after_bundler do
   generate 'cancan:ability'
+  #load ability.rb to allow initial management
+  gsub_file 'app/models/ability.rb', /def initialize\(user\)/ do
+    "# let RailsAdmin allow initial user sign-up
+    def initialize(user)
+      can :manage, :all
+    "
+  end
+end
+
+# >--------------------------------[ Mailer ]---------------------------------<
+
+@current_recipe = "mailer"
+@before_configs["mailer"].call if @before_configs["mailer"]
+say_recipe 'Mailer'
+
+config = {}
+config['mailer'] = yes_wizard?("Would you like to include Mailer?") if true && true unless config.key?('mailer')
+@configs[@current_recipe] = config
+
+if config['mailer']
+  after_bundler do
+    say_wizard "Adding Mailer options"
+    generate "mailer PostOffice"
+  end
+else
+  recipes.delete('mailer')
+end
+
+
+# >--------------------------------[ Products ]---------------------------------<
+
+@current_recipe = "products"
+@before_configs["products"].call if @before_configs["products"]
+say_recipe 'Products'
+
+config = {}
+config['category'] = yes_wizard?("Would you like to include Product Category?") if true && true unless config.key?('category')
+config['brand'] = yes_wizard?("Would you like to include Product Brand?") if true && true unless config.key?('brand')
+config['product'] = yes_wizard?("Would you like to include Product?") if true && true unless config.key?('product')
+
+config['shopping_cart'] = yes_wizard?("Would you like to add Cart Management?") if true && true unless config.key?('shopping_cart')
+
+@configs[@current_recipe] = config
+
+#if config['product']
+  after_bundler do
+    if config['product']
+      say_wizard "Adding Product options"
+      generate(:model, "product name:string description:string price:string #{(config['brand'])? "brand_id:string" : "" }")
+    end
+    
+    if config['brand']
+      say_wizard "Adding Brand options"
+      generate "model brand name:string description:string"
+      
+      gsub_file 'app/models/product.rb', 'ActiveRecord::Base' do
+        "ActiveRecord::Base
+  belongs_to :brand"
+      end
+      gsub_file 'app/models/brand.rb', 'ActiveRecord::Base' do
+        "ActiveRecord::Base
+  has_many :products"
+      end
+    end
+       
+    if config['shopping_cart']
+      say_wizard "Adding Cart Management options"
+      generate "model cart"
+      generate "model line_item product_id:integer cart_id:integer quantity:integer price:float"
+      
+      gsub_file 'app/models/product.rb', 'ActiveRecord::Base' do
+        "ActiveRecord::Base
+        has_many :line_items
+        default_scope :order => \"Name\"
+        before_destroy :ensure_not_referenced_by_any_line_item
+        def to_param
+          
+        end
+
+        def ensure_not_referenced_by_any_line_item
+          if line_items.empty?
+            return true
+          else
+            errors.add(:base, \"Line Items present\")
+            return false
+          end
+        end"
+      end
+      
+      gsub_file 'app/models/cart.rb', 'ActiveRecord::Base' do
+        "ActiveRecord::Base
+  has_many :line_items, :dependent => :destroy
+  
+  def add_product(product_id, price, quantity)
+    current_item = line_items.find_by_product_id(product_id)
+    if current_item
+      current_item.quantity += 1
+    else
+      current_item = line_items.build(:product_id => product_id, :price => price, :quantity => quantity)
+    end
+    current_item
+  end
+
+  def total_items
+    (self.line_items.size > 0) ? self.line_items.all.inject(0) {|sum, item| sum + item.quantity} : 0
+  end
+
+  def total_price
+    (self.line_items.size > 0) ? self.line_items.all.inject(0) {|sum, item| sum + (item.price * item.quantity)} : 0
+  end"
+      end
+      
+      gsub_file 'app/models/line_item.rb', 'ActiveRecord::Base' do
+        "ActiveRecord::Base
+  belongs_to :product
+  belongs_to :cart
+  
+  def sub_total
+    self.quantity * self.price
+  end"
+      end
+    end
+  end
+#else
+recipes.delete('products')
+
+
+# >-----------------------------[ Configurations]-----------------------------------<
+
+say_recipe 'Configuration File'
+after_bundler do
+  say_wizard "Generate Configuration Model"
+  generate "model configuration name:string description:string"
+  remove_file 'app/models/configuration.rb'
+  create_file 'app/models/configuration.rb' do
+<<-'RailsAdminConfig'
+class Configuration < ActiveRecord::Base
+after_save :restart
+
+def restart
+  f = File.new("#{Rails.root}/config/sitemap.rb", "w+") 
+  f.truncate(0)
+  f.write("SitemapGenerator::Sitemap.default_host = Configuration.find_by_name('host').description if Configuration.find_by_name('host')\r\n")
+  f.write("SitemapGenerator::Sitemap.yahoo_app_id = Configuration.find_by_name('yahoo_app_id').description if Configuration.find_by_name('yahoo_app_id')\r\n")
+  f.write("SitemapGenerator::Sitemap.create do\r\n")
+  Configuration.where("name = 'for_sitemap'").each do |c|
+    f.write("  add #{c.description.downcase}s_path\r\n")
+    f.write("  #{c.description.classify}.find_each do |obj|\r\n")
+    f.write("    add #{c.description.downcase}_path(obj), :lastmod => obj.updated_at\r\n")
+    f.write("  end\r\n")
+  end
+  f.write("end\r\n")
+  f.close
+
+  if Configuration.find_by_name('restart').description.downcase == "yes"
+    system("touch #{Rails.root}/tmp/restart.txt")
+    config = Configuration.find_by_name('restart')
+    config.description = "no"
+    config.save 
+  end if Configuration.find_by_name('restart')
+
+  if Configuration.find_by_name('deploy_sitemap').description.downcase == "yes"
+    system("rake sitemap:refresh RAILS_ENV=#{Rails.env}")
+    config = Configuration.find_by_name('deploy_sitemap')
+    config.description = "no"
+    config.save
+  end if Configuration.find_by_name('deploy_sitemap')
+end
+end
+RailsAdminConfig
+  end
 end
 
 # >-----------------------------[ Sitemap Generator ]-------------------------------<
@@ -403,6 +557,40 @@ after_bundler do
     devise_for :users
     root :to => 'home#index'
     "
+  end
+  
+  say_wizard "ActionMailer recipe running 'after bundler'"
+  # modifying environment configuration files for ActionMailer
+  gsub_file 'config/environments/development.rb', /# Don't care if the mailer can't send/, '# ActionMailer Config'
+  gsub_file 'config/environments/development.rb', /config.action_mailer.raise_delivery_errors = false/ do
+<<-RUBY
+config.action_mailer.default_url_options = { :host => 'localhost:3000' }
+  # A dummy setup for development - no deliveries, but logged
+  config.action_mailer.delivery_method = :smtp
+  config.action_mailer.perform_deliveries = false
+  config.action_mailer.raise_delivery_errors = true
+  config.action_mailer.default :charset => "utf-8"
+RUBY
+  end
+  gsub_file 'config/environments/production.rb', /config.active_support.deprecation = :notify/ do
+<<-RUBY
+config.active_support.deprecation = :notify
+
+  config.action_mailer.default_url_options = { :host => 'yourhost.com' }
+  # ActionMailer Config
+  # Setup for production - deliveries, no errors raised
+  config.action_mailer.delivery_method = :smtp
+  config.action_mailer.perform_deliveries = true
+  config.action_mailer.raise_delivery_errors = false
+  config.action_mailer.default :charset => "utf-8"
+RUBY
+  end
+  
+  say_wizard "Add Sitemap to Robots.txt"
+  append_file 'public/robots.txt' do
+<<-'RailsAdminConfig'
+Sitemap: http://www.example.com/sitemap_index.xml.gz
+RailsAdminConfig
   end
 end
 

@@ -417,6 +417,7 @@ if config['public_pages']
   end
 end
 
+=======
 # >-----------------------------[ Cleanup ]-------------------------------<
 @current_recipe = "cleanup"
 @before_configs["cleanup"].call if @before_configs["cleanup"]
