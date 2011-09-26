@@ -417,7 +417,6 @@ if config['public_pages']
   end
 end
 
-=======
 # >-----------------------------[ Cleanup ]-------------------------------<
 @current_recipe = "cleanup"
 @before_configs["cleanup"].call if @before_configs["cleanup"]
@@ -432,13 +431,15 @@ after_bundler do
   remove_file 'app/assets/javascripts/application.js'
   get 'https://raw.github.com/jcuervo/FireStarter/master/assets/application.js', 'app/assets/javascripts/application.js'
   
-  # run the generated migrations
-  say_wizard "Running the accumulated migrations..."
-  run 'bundle exec rake db:migrate'
+  if config['auto_create'] #only when the database is auto-create, only happens for SQLite
+    # run the generated migrations
+    say_wizard "Running the accumulated migrations..."
+    run 'bundle exec rake db:migrate'
   
-  # run the seeds
-  say_wizard "Loading initial seeds..."
-  run 'bundle exec rake db:seed'
+    # run the seeds
+    say_wizard "Loading initial seeds..."
+    run 'bundle exec rake db:seed'
+  end
   
   # generate the Home controller
   say_wizard "Creating the Home controller for the home page"
@@ -481,10 +482,12 @@ after_bundler do
   "
   end
   
-  # update app/admin/pages.rb
-  say_wizard "Removing auto-generated pages.rb and replace with template..."
-  remove_file 'app/admin/pages.rb'
-  get 'https://raw.github.com/jcuervo/FireStarter/master/assets/ckeditor/pages.rb', 'app/admin/pages.rb'
+  if config['public_pages']
+    # update app/admin/pages.rb
+    say_wizard "Removing auto-generated pages.rb and replace with template..."
+    remove_file 'app/admin/pages.rb'
+    get 'https://raw.github.com/jcuervo/FireStarter/master/assets/ckeditor/pages.rb', 'app/admin/pages.rb'
+  end
 end
 
 @current_recipe = nil
