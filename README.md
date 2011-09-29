@@ -13,7 +13,7 @@ This template is specific to Rails 3.1 with Ruby 1.9.2.
 How to Use
 ===========
 Run directly from github:<br>
-`rails new <appname> -m https://raw.github.com/jcuervo/FireStarter/master/start.rb`<br>
+`rails new <appname> -m https://raw.github.com/jcuervo/FireStarter/master/wizard_with_active_admin.rb`<br>
 
 We'll follow on how to apply this template to existing apps later as well.
 
