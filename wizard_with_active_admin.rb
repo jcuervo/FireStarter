@@ -463,10 +463,10 @@ after_bundler do
   "
   end
 
-  say_wizard "Moving ckeditor folder from public to assets..."
+  # say_wizard "Moving ckeditor folder from public to assets..."
   # move ckeditor folder from public/javascript to app/assets/javascripts
-  FileUtils.cp_r 'public/javascripts/ckeditor/', 'app/assets/javascripts/'
-  FileUtils.remove_dir 'public/javascripts', :force => true
+  # FileUtils.cp_r 'public/javascripts/ckeditor/', 'app/assets/javascripts/'
+  # FileUtils.remove_dir 'public/javascripts', :force => true
   
   say_wizard "Loading custom.css to hack ckeditor styles for active_admin"
   # copy assets/ckeditor/custom.css to app/assets/ckeditor/custom.css folder
@@ -480,6 +480,22 @@ after_bundler do
   config.register_javascript 'ckeditor/config.js'
   config.register_stylesheet 'ckeditor/custom.css'
   "
+  end
+  
+  say_wizard "Prepare production's asset precompile to include ckeditor files..."
+  gsub_file 'config/environments/production.rb', /config.active_support.deprecation = :notify/ do
+  "
+  config.active_support.deprecation = :notify
+  config.assets.precompile += %w[active_admin.css active_admin.js ckeditor/custom.css]
+  "
+  end
+  
+  #move gem 'sass-rails', "  ~> 3.1.0" out of the assets group
+  gsub_file 'Gemfile', /gem 'sass-rails', "  ~> 3.1.0"/, ''
+  inject_into_file 'Gemfile', :after => "# gem 'unicorn'\n" do
+<<-'RUBY'
+  gem 'sass-rails', "  ~> 3.1.0"
+RUBY
   end
   
   if config['public_pages']
