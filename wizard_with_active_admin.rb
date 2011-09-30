@@ -178,6 +178,17 @@ gem 'haml-rails'
 gem 'formtastic'
 gem 'jquery-rails'
 
+# >---------------------------------[ metamagic ]----------------------------------<
+
+@current_recipe = "metamagic"
+@before_configs["metamagic"].call if @before_configs["metamagic"]
+say_recipe 'metamagic'
+
+
+@configs[@current_recipe] = config
+
+gem 'metamagic'
+
 
 # >------------------------------[ ActiveAdmin ]-------------------------------<
 
